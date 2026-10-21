@@ -8,9 +8,20 @@ Projet M2 Data Engineering & Data Analyse (binôme).
 git clone <url-du-repo> && cd boreal-NOM1-NOM2
 python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
-make all
-make dashboard
+python pipeline.py all
+streamlit run dashboard/app.py
 ```
+
+## Commandes utiles
+
+```bash
+python pipeline.py all                      # ingest -> prep -> dedup -> quality -> core -> tests
+python pipeline.py reload --month 2024_03   # rejoue un mois de règlements (idempotent)
+python -m pytest -q tests                   # tests seuls
+```
+
+Journal : `meta.ingestion_log` (fichiers), `meta.pipeline_runs` (étapes), `meta.qualite_resultats` (règles).
+Alertes : `logs/alerts.log`. Lignes écartées : `quarantine.anomalies` / `quarantine.lignes_exclues`.
 
 ## Architecture
 
@@ -34,4 +45,4 @@ Définitions des indicateurs : voir `docs/contrat.md`.
 
 - Pas de push direct sur `main` : une branche par tâche (`feat/...`), puis pull request relue par l'autre.
 - Commits courts : `feat(l1): ...`, `fix(l2): ...`, `docs: ...`.
-- `boreal.duckdb` n'est pas versionné : il est régénéré par `make all`.
+- `boreal.duckdb` n'est pas versionné : il est régénéré par `python pipeline.py all`.

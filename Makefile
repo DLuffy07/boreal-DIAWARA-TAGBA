@@ -1,6 +1,6 @@
 PY ?= python
 
-.PHONY: all ingest core reload dashboard
+.PHONY: all ingest core reload dashboard test
 
 all:        ## pipeline complet
 	$(PY) pipeline.py all
@@ -8,7 +8,7 @@ all:        ## pipeline complet
 ingest:     ## sources -> raw (+ journal d'ingestion)
 	$(PY) pipeline.py ingest
 
-core:       ## raw -> core
+core:       ## prep -> core
 	$(PY) pipeline.py core
 
 reload:     ## rejoue un mois, ex. make reload MONTH=2024_03
@@ -16,3 +16,6 @@ reload:     ## rejoue un mois, ex. make reload MONTH=2024_03
 
 dashboard:
 	streamlit run dashboard/app.py
+
+test:       ## tests bloquants seuls
+	$(PY) -m pytest -q tests

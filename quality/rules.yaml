@@ -1,0 +1,330 @@
+# Règles de qualité appliquées sur la couche prep.
+# Chaque requête renvoie les _row_key des lignes en anomalie.
+# traitement :
+#   exclure   -> la ligne ne va pas dans le cœur, elle reste dans quarantine.anomalies
+#   corriger  -> la ligne va dans le cœur avec une valeur corrigée (correction décrite)
+#   signaler  -> la ligne va dans le cœur telle quelle, l'anomalie est tracée
+# Les règles s'exécutent DANS L'ORDRE : une règle peut s'appuyer sur les exclusions
+# des règles précédentes (ex. sinistre rattaché à un contrat exclu).
+# Gravité : bloquante (rend la ligne inutilisable), majeure (fausse un indicateur),
+#           mineure (à documenter).
+
+rules:
+  # ------------------------------------------------------------ CLIENTS
+  - id: Q01
+    table: clients
+    dimension: complétude
+    libelle: Identifiant client absent ou non numérique
+    gravite: bloquante
+    traitement: exclure
+    sql: SELECT _row_key FROM prep.clients WHERE client_id IS NULL
+
+  - id: Q02
+    table: clients
+    dimension: unicité
+    libelle: Identifiant client en double dans le CRM (seconde occurrence)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.clients WHERE client_id IS NOT NULL
+      QUALIFY row_number() OVER (PARTITION BY client_id ORDER BY _source_file, _row_number) > 1
+
+  - id: Q07
+    table: clients
+    dimension: complétude
+    libelle: Date de naissance manquante ou illisible
+    gravite: mineure
+    traitement: signaler
+    sql: SELECT _row_key FROM prep.clients WHERE date_naissance IS NULL
+
+  - id: Q08
+    table: clients
+    dimension: validité
+    libelle: Âge au 30/06/2025 hors [18 ; 100] ans
+    gravite: majeure
+    traitement: corriger
+    correction: date de naissance mise à null dans le cœur, tranche d'âge « inconnu » (valeur source intacte en raw)
+    sql: |
+      SELECT _row_key FROM prep.clients
+      WHERE date_naissance IS NOT NULL
+        AND (date_naissance > DATE '2025-06-30' - INTERVAL 18 YEAR
+             OR date_naissance <= DATE '2025-06-30' - INTERVAL 101 YEAR)
+
+  - id: Q09
+    table: clients
+    dimension: unicité
+    libelle: Empreinte e-mail partagée par plusieurs identifiants (doublon CRM probable)
+    gravite: majeure
+    traitement: signaler
+    correction: traité par la déduplication (prep.client_mapping)
+    sql: |
+      SELECT _row_key FROM prep.clients
+      WHERE email_hash IN (SELECT email_hash FROM prep.clients WHERE email_hash IS NOT NULL
+                           GROUP BY 1 HAVING count(*) > 1)
+
+  - id: Q10
+    table: clients
+    dimension: validité
+    libelle: Région, CSP ou consentement hors référentiel
+    gravite: mineure
+    traitement: signaler
+    sql: |
+      SELECT _row_key FROM prep.clients
+      WHERE region NOT IN ('ARA','BFC','BRE','CVL','COR','GES','HDF','IDF','NOR','NAQ','OCC','PDL','PACA')
+         OR csp NOT IN ('CADRE','EMPLOYE','ETUDIANT','INDEPENDANT','OUVRIER','RETRAITE')
+         OR consent_marketing NOT IN (0, 1) OR region IS NULL OR csp IS NULL OR consent_marketing IS NULL
+
+  # ------------------------------------------------------------ CONTRATS
+  - id: Q11
+    table: contrats
+    dimension: unicité
+    libelle: Identifiant contrat absent ou en double (seconde occurrence)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.contrats WHERE contrat_id IS NULL
+      UNION ALL
+      SELECT _row_key FROM prep.contrats WHERE contrat_id IS NOT NULL
+      QUALIFY row_number() OVER (PARTITION BY contrat_id ORDER BY _source_file, _row_number) > 1
+
+  - id: Q12
+    table: contrats
+    dimension: cohérence inter-tables
+    libelle: Contrat rattaché à un client inconnu ou exclu
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.contrats
+      WHERE client_id IS NULL OR client_id NOT IN (
+        SELECT client_id FROM prep.clients
+        WHERE client_id IS NOT NULL
+          AND _row_key NOT IN (SELECT _row_key FROM quarantine.anomalies WHERE traitement = 'exclure'))
+
+  - id: Q03
+    table: contrats
+    dimension: validité
+    libelle: Prime annuelle nulle, négative ou absente
+    gravite: bloquante
+    traitement: exclure
+    sql: SELECT _row_key FROM prep.contrats WHERE prime_annuelle IS NULL OR prime_annuelle <= 0
+
+  - id: Q04
+    table: contrats
+    dimension: cohérence temporelle
+    libelle: Date de résiliation antérieure ou égale à la date d'effet (durée nulle ou négative)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.contrats
+      WHERE date_effet IS NULL OR (date_resiliation IS NOT NULL AND date_resiliation <= date_effet)
+
+  - id: Q13
+    table: contrats
+    dimension: validité
+    libelle: Produit inconnu ou attributs incohérents avec le produit (auto sans puissance, habitation sans surface)
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.contrats
+      WHERE produit NOT IN ('AUTO', 'HABITATION') OR produit IS NULL
+         OR (produit = 'AUTO' AND (puissance_cv IS NULL OR bonus_malus IS NULL))
+         OR (produit = 'HABITATION' AND surface_m2 IS NULL)
+
+  - id: Q14
+    table: contrats
+    dimension: cohérence temporelle
+    libelle: Date d'effet ou de résiliation postérieure à la fin d'observation (30/06/2025)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.contrats
+      WHERE date_effet > DATE '2025-06-30' OR date_resiliation > DATE '2025-07-01'
+
+  # ------------------------------------------------------------ SINISTRES
+  - id: Q15
+    table: sinistres
+    dimension: unicité
+    libelle: Identifiant sinistre absent ou en double (seconde occurrence)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.sinistres WHERE sinistre_id IS NULL
+      UNION ALL
+      SELECT _row_key FROM prep.sinistres WHERE sinistre_id IS NOT NULL
+      QUALIFY row_number() OVER (PARTITION BY sinistre_id ORDER BY _source_file, _row_number) > 1
+
+  - id: Q16
+    table: sinistres
+    dimension: cohérence inter-tables
+    libelle: Sinistre rattaché à un contrat inconnu ou exclu
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.sinistres
+      WHERE contrat_id IS NULL OR contrat_id NOT IN (
+        SELECT contrat_id FROM prep.contrats
+        WHERE _row_key NOT IN (SELECT _row_key FROM quarantine.anomalies WHERE traitement = 'exclure'))
+
+  - id: Q05
+    table: sinistres
+    dimension: cohérence temporelle
+    libelle: Déclaration antérieure à la survenance
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.sinistres
+      WHERE date_survenance IS NULL OR date_declaration IS NULL OR date_declaration < date_survenance
+
+  - id: Q06
+    table: sinistres
+    dimension: cohérence inter-tables
+    libelle: Sinistre survenu hors de la période de couverture du contrat
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT s._row_key FROM prep.sinistres s
+      JOIN prep.contrats c USING (contrat_id)
+      WHERE s.date_survenance < c.date_effet
+         OR (c.date_resiliation IS NOT NULL AND s.date_survenance >= c.date_resiliation)
+
+  - id: Q17
+    table: sinistres
+    dimension: cohérence inter-tables
+    libelle: Garantie incompatible avec le produit du contrat
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT s._row_key FROM prep.sinistres s JOIN prep.contrats c USING (contrat_id)
+      WHERE NOT (
+        (c.produit = 'AUTO' AND s.garantie IN ('BRIS_GLACE', 'COLLISION', 'RC', 'VOL'))
+        OR (c.produit = 'HABITATION' AND s.garantie IN ('DEGAT_EAUX', 'INCENDIE', 'TEMPETE', 'VOL')))
+
+  - id: Q18
+    table: sinistres
+    dimension: validité
+    libelle: Statut hors référentiel ou réserve initiale négative / absente
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.sinistres
+      WHERE statut NOT IN ('OUVERT', 'CLOTURE', 'SANS_SUITE', 'REJETE') OR statut IS NULL
+         OR reserve_initiale IS NULL OR reserve_initiale < 0
+
+  - id: Q19
+    table: sinistres
+    dimension: cohérence temporelle
+    libelle: Survenance ou déclaration postérieure à la fin d'observation
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.sinistres
+      WHERE date_survenance > DATE '2025-06-30' OR date_declaration > DATE '2025-06-30'
+
+  # ------------------------------------------------------------ RÈGLEMENTS
+  - id: Q20
+    table: reglements
+    dimension: unicité
+    libelle: Paiement livré deux fois (même paiement_id, seconde occurrence)
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.reglements WHERE paiement_id IS NULL
+      UNION ALL
+      SELECT _row_key FROM prep.reglements WHERE paiement_id IS NOT NULL
+      QUALIFY row_number() OVER (PARTITION BY paiement_id ORDER BY _source_file, _row_number) > 1
+
+  - id: Q21
+    table: reglements
+    dimension: cohérence temporelle
+    libelle: Date de paiement hors du mois annoncé par le fichier (livraison tardive)
+    gravite: mineure
+    traitement: signaler
+    sql: |
+      SELECT _row_key FROM prep.reglements
+      WHERE date_trunc('month', date_paiement) <> mois_fichier
+
+  - id: Q22
+    table: reglements
+    dimension: cohérence inter-tables
+    libelle: Règlement rattaché à un sinistre inconnu ou exclu
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.reglements
+      WHERE sinistre_id IS NULL OR sinistre_id NOT IN (
+        SELECT sinistre_id FROM prep.sinistres
+        WHERE _row_key NOT IN (SELECT _row_key FROM quarantine.anomalies WHERE traitement = 'exclure'))
+
+  - id: Q23
+    table: reglements
+    dimension: validité
+    libelle: Montant absent, nul ou négatif
+    gravite: bloquante
+    traitement: exclure
+    sql: SELECT _row_key FROM prep.reglements WHERE montant IS NULL OR montant <= 0
+
+  - id: Q24
+    table: reglements
+    dimension: cohérence temporelle
+    libelle: Paiement antérieur à la survenance du sinistre ou postérieur à la fin d'observation
+    gravite: majeure
+    traitement: exclure
+    sql: |
+      SELECT r._row_key FROM prep.reglements r JOIN prep.sinistres s USING (sinistre_id)
+      WHERE r.date_paiement IS NULL OR r.date_paiement < s.date_survenance
+         OR r.date_paiement > DATE '2025-06-30'
+
+  - id: Q25
+    table: reglements
+    dimension: validité
+    libelle: Montant atypique (plus de 100 fois la médiane des règlements)
+    gravite: majeure
+    traitement: signaler
+    correction: conservé dans la charge, analysé à part (sensibilité du S/P avec et sans)
+    sql: |
+      SELECT _row_key FROM prep.reglements
+      WHERE montant > 100 * (SELECT median(montant) FROM prep.reglements WHERE montant > 0)
+
+  - id: Q26
+    table: reglements
+    dimension: cohérence inter-tables
+    libelle: Paiement sur un sinistre classé sans suite ou rejeté
+    gravite: majeure
+    traitement: signaler
+    sql: |
+      SELECT r._row_key FROM prep.reglements r JOIN prep.sinistres s USING (sinistre_id)
+      WHERE s.statut IN ('SANS_SUITE', 'REJETE')
+
+  # ------------------------------------------------------------ AUDITS
+  - id: Q27
+    table: audits
+    dimension: cohérence inter-tables
+    libelle: Audit sur un sinistre inconnu ou exclu, ou audit en double
+    gravite: bloquante
+    traitement: exclure
+    sql: |
+      SELECT _row_key FROM prep.audits
+      WHERE sinistre_id IS NULL OR sinistre_id NOT IN (
+        SELECT sinistre_id FROM prep.sinistres
+        WHERE _row_key NOT IN (SELECT _row_key FROM quarantine.anomalies WHERE traitement = 'exclure'))
+      UNION ALL
+      SELECT _row_key FROM prep.audits WHERE sinistre_id IS NOT NULL
+      QUALIFY row_number() OVER (PARTITION BY sinistre_id ORDER BY date_audit, _row_number) > 1
+
+  - id: Q28
+    table: audits
+    dimension: validité
+    libelle: Résultat d'audit hors {0, 1}
+    gravite: bloquante
+    traitement: exclure
+    sql: SELECT _row_key FROM prep.audits WHERE fraude_confirmee NOT IN (0, 1) OR fraude_confirmee IS NULL
+
+  - id: Q29
+    table: audits
+    dimension: cohérence temporelle
+    libelle: Audit daté avant la déclaration du sinistre
+    gravite: mineure
+    traitement: signaler
+    sql: |
+      SELECT a._row_key FROM prep.audits a JOIN prep.sinistres s USING (sinistre_id)
+      WHERE a.date_audit < s.date_declaration
