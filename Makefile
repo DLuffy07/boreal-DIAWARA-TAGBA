@@ -1,34 +1,18 @@
 PY ?= python
-DB ?= boreal.duckdb
 
-.PHONY: all ingest prep quality core test marts dashboard reload clean
+.PHONY: all ingest core reload dashboard
 
-all: ingest prep quality core test marts   ## pipeline complet
+all:        ## pipeline complet
+	$(PY) pipeline.py all
 
-ingest:      ## A : sources -> raw (+ journal d'ingestion)
-	@echo "TODO ingest" # $(PY) -m ingestion.load_raw --db $(DB)
+ingest:     ## sources -> raw (+ journal d'ingestion)
+	$(PY) pipeline.py ingest
 
-prep:        ## A : raw -> prep (typage, normalisation)
-	@echo "TODO prep"
+core:       ## raw -> core
+	$(PY) pipeline.py core
 
-quality:     ## A : règles qualité -> quarantaine
-	@echo "TODO quality"
+reload:     ## rejoue un mois, ex. make reload MONTH=2024_03
+	$(PY) pipeline.py reload --month $(MONTH)
 
-core:        ## A : prep -> core (schéma en étoile)
-	@echo "TODO core"
-
-test:        ## A : tests bloquants (un échec arrête make all)
-	@echo "TODO test" # $(PY) -m pytest -q tests
-
-marts:       ## B : core -> marts
-	@echo "TODO marts"
-
-dashboard:   ## B : lance le dashboard
-	@echo "TODO dashboard" # streamlit run dashboard/app.py
-
-reload:      ## A : rejoue un mois, ex. make reload MONTH=2024_03
-	@test -n "$(MONTH)" || (echo "Usage : make reload MONTH=AAAA_MM" && exit 1)
-	@echo "TODO reload $(MONTH)"
-
-clean:
-	rm -f $(DB)
+dashboard:
+	streamlit run dashboard/app.py
