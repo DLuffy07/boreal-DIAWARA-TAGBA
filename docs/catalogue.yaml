@@ -1,0 +1,227 @@
+# Catalogue des données : description de chaque table et de chaque colonne.
+# docs/gen_catalogue.py croise ce fichier avec la base et produit docs/catalogue.md.
+# Toute colonne présente en base mais absente d'ici est listée comme « NON DOCUMENTÉE ».
+# Les colonnes communes (même sens partout) sont décrites une seule fois.
+
+communes:
+  _source_file: Fichier source d'où provient la ligne (chemin relatif à data/sources)
+  _row_number: Numéro de ligne dans le fichier source (en-tête exclu)
+  _loaded_at: Horodatage du chargement en couche brute
+  _row_key: Identifiant unique d'une ligne source, fichier#ligne ; clé de traçabilité vers la quarantaine
+  client_id: Identifiant client tel que fourni par le CRM
+  client_id_maitre: Identifiant du client après déduplication (voir prep.client_mapping)
+  contrat_id: Identifiant du contrat
+  sinistre_id: Identifiant du sinistre
+  paiement_id: Identifiant du paiement
+  date_naissance: Date de naissance du client
+  region: Région de résidence (code à 2-4 lettres, ex. IDF)
+  csp: Catégorie socio-professionnelle
+  consent_marketing: Consentement à la prospection commerciale (1/true = oui)
+  email_hash: Empreinte pseudonymisée de l'adresse e-mail (pas de l'e-mail en clair)
+  produit: AUTO ou HABITATION
+  formule: ESSENTIELLE, CONFORT ou PREMIUM
+  canal_distribution: Canal de souscription (AGENT, COURTIER, WEB)
+  zone_risque: Zone tarifaire de risque, de 1 (faible) à 5 (élevé)
+  franchise: Franchise contractuelle en euros
+  bonus_malus: Coefficient de réduction-majoration (auto uniquement)
+  puissance_cv: Puissance fiscale du véhicule (auto uniquement)
+  surface_m2: Surface du logement en m² (habitation uniquement)
+  prime_annuelle: Prime annuelle du contrat en euros
+  date_effet: Date de début de couverture (incluse)
+  date_resiliation: Date de fin de couverture (exclue) ; vide si le contrat court encore
+  date_survenance: Date à laquelle le sinistre s'est produit
+  date_declaration: Date à laquelle le sinistre a été déclaré à l'assureur
+  garantie: Garantie mise en jeu (COLLISION, VOL, DEGAT_EAUX...)
+  statut: Statut du sinistre (OUVERT, CLOTURE, SANS_SUITE, REJETE)
+  reserve_initiale: Montant provisionné à l'ouverture du dossier, en euros
+  date_paiement: Date du paiement
+  montant: Montant payé en euros
+  date_audit: Date du contrôle antifraude
+  fraude_confirmee: Résultat de l'audit (1/true = fraude confirmée)
+  segment_id: Segment de risque = produit-zone-formule-canal
+  annee: Année civile
+  mois: Mois (1-12) ou premier jour du mois selon la table
+  annee_mois: Mois au format AAAA-MM
+  run_id: Identifiant d'un lancement du pipeline
+  horodatage: Date et heure de l'événement
+  statut_ligne: Statut technique
+  motif: Raison de la mise en quarantaine
+  rule_id: Identifiant de la règle de qualité (voir quality/rules.yaml)
+  table_source: Table prep concernée par la règle
+  libelle: Description de la règle
+  dimension: Dimension qualité (complétude, unicité, validité, cohérence inter-tables, cohérence temporelle)
+  gravite: bloquante, majeure ou mineure
+  traitement: exclure (hors du cœur), corriger (valeur corrigée), signaler (tracé seulement)
+  correction: Correction appliquée quand le traitement est « corriger » ou précision sur le traitement
+  detecte_le: Horodatage de la détection
+  volume: Nombre de lignes concernées
+  duree_s: Durée en secondes
+  message: Message d'erreur ou commentaire
+
+tables:
+  # ---------------------------------------------------------------- RAW
+  raw.clients:
+    description: Copie fidèle de crm/clients.csv (latin-1, séparateur ;). Toutes les valeurs en texte.
+  raw.contrats:
+    description: Copie fidèle de contrats/contrats.csv. Toutes les valeurs en texte.
+  raw.sinistres:
+    description: Copie fidèle de sinistres/sinistres.jsonl, une ligne par enregistrement JSON.
+  raw.reglements:
+    description: Copie fidèle des 64 fichiers mensuels reglements_AAAA_MM.csv, colonnes alignées par nom (montant_eur -> montant).
+  raw.audits:
+    description: Copie fidèle de antifraude/audits.csv (dossiers audités uniquement).
+
+  # ---------------------------------------------------------------- PREP
+  prep.clients:
+    description: Clients typés et normalisés, sans filtrage (autant de lignes qu'en raw).
+    colonnes:
+      client_id_brut: Identifiant client tel que lu, avant conversion en entier
+  prep.contrats:
+    description: Contrats typés et normalisés, sans filtrage.
+  prep.sinistres:
+    description: Sinistres typés et normalisés, sans filtrage.
+  prep.reglements:
+    description: Règlements typés, sans filtrage ; les doublons de livraison y sont encore présents.
+    colonnes:
+      mois_fichier: Mois annoncé par le nom du fichier (sert à détecter les livraisons tardives, règle Q21)
+  prep.audits:
+    description: Audits typés, sans filtrage.
+  prep.client_mapping:
+    description: Résultat de la déduplication (script quality/dedup_clients.py) — un client source vers son client maître.
+
+  # ---------------------------------------------------------------- QUARANTAINE
+  quarantine.anomalies:
+    description: Une ligne par couple (règle, ligne source en anomalie). Rien n'est supprimé.
+  quarantine.lignes_exclues:
+    description: Vue — lignes écartées du cœur (traitement « exclure »), tous motifs concaténés.
+    colonnes:
+      motifs: Liste des règles et motifs ayant conduit à l'exclusion
+  quarantine.clients_dedup:
+    description: Identifiants clients absorbés par la déduplication, avec leur client maître.
+  quarantine.raw_rejets:
+    description: Lignes illisibles à l'ingestion (nombre de champs incorrect, JSON invalide).
+    colonnes:
+      fichier: Fichier source
+      ligne: Numéro de ligne
+      contenu: Contenu brut de la ligne rejetée
+
+  # ---------------------------------------------------------------- CŒUR
+  core.dim_date:
+    description: Calendrier, une ligne par jour de 2019 à 2025.
+    colonnes:
+      date: Jour
+  core.dim_client:
+    description: Dimension client en SCD2, une ligne par version d'un client maître.
+    colonnes:
+      client_sk: Clé technique d'une version de client (md5 de l'identifiant et de valid_from)
+      date_naissance: Date de naissance (mise à null si âge hors [18;100], règle Q08)
+      age: Âge au 30/06/2025
+      tranche_age: 18-24, 25-34, 35-49, 50-64, 65+ ou inconnu
+      valid_from: Début de validité de la version (incluse)
+      valid_to: Fin de validité (exclue), vide pour la version courante
+      is_current: Vrai pour la version en vigueur
+      hash_attributs: Empreinte de région + CSP + consentement, sert à détecter un changement
+  core.v_client_analyse:
+    description: Vue — profil client observé au 30/06/2025, une ligne par client maître. Seule vue client à joindre dans les marts.
+    colonnes:
+      client_sk: Clé de la version utilisée
+      age: Âge au 30/06/2025
+      tranche_age: 18-24, 25-34, 35-49, 50-64, 65+ ou inconnu
+  core.dim_contrat:
+    description: Contrats valides (hors quarantaine), rattachés à leur client maître.
+  core.dim_segment:
+    description: Segments de risque produit × zone × formule × canal présents dans le portefeuille.
+  core.dim_garantie:
+    description: Référentiel des garanties et du produit auquel elles s'appliquent.
+  core.fait_exposition:
+    description: Grain contrat × année civile. Base de toute fréquence et de toute prime acquise.
+    colonnes:
+      exposition_annees: Jours couverts dans l'année / 365,25 (effet inclus, résiliation exclue, fin d'observation 30/06/2025 incluse)
+      prime_acquise: prime_annuelle × exposition_annees, en euros
+      resilie_dans_annee: Vrai si la date de résiliation tombe dans l'année (indicatif ; compter les résiliations depuis dim_contrat)
+  core.fait_sinistre:
+    description: Grain sinistre. Charge évaluée au 30/06/2025.
+    colonnes:
+      montant_paye: Somme des règlements valides du sinistre
+      nb_paiements: Nombre de règlements valides
+      date_premier_paiement: Date du premier règlement
+      date_dernier_paiement: Date du dernier règlement (sert de date de clôture approchée)
+      reserve_restante: Pour un sinistre OUVERT, max(réserve initiale − payé, 0) ; sinon 0
+      charge: montant_paye + reserve_restante
+      retenu: Vrai si statut hors SANS_SUITE et REJETE ; seuls les retenus entrent dans fréquence, coût moyen et S/P
+      audite: Vrai si le dossier a été contrôlé par l'antifraude
+  core.fait_reglement:
+    description: Grain paiement. Règlements valides, doublons de livraison exclus.
+
+  # ---------------------------------------------------------------- MÉTA
+  meta.ingestion_log:
+    description: Journal d'ingestion, une ligne par fichier et par lancement.
+    colonnes:
+      source: Table brute alimentée
+      fichier: Fichier traité
+      hash: Empreinte SHA-256 du fichier (détecte une relivraison identique)
+      lignes_lues: Lignes lues dans le fichier
+      lignes_chargees: Lignes insérées en couche brute
+      lignes_rejetees: Lignes illisibles envoyées dans quarantine.raw_rejets
+      statut: OK, SKIPPED (fichier déjà chargé à l'identique) ou FAILED
+  meta.pipeline_runs:
+    description: Journal des étapes du pipeline, une ligne par étape et par lancement.
+    colonnes:
+      etape: Nom de l'étape (ingest, prep, dedup, quality, core, test, marts, docs)
+      statut: OK ou FAILED
+  meta.qualite_resultats:
+    description: Historique du volume de chaque règle de qualité à chaque exécution.
+    colonnes:
+      run_at: Horodatage de l'exécution des règles
+      lignes_table: Nombre de lignes de la table contrôlée
+      taux: volume / lignes_table
+  meta.test_results:
+    description: Résultat de chaque test bloquant à chaque lancement.
+    colonnes:
+      module: Fichier de test
+      test: Nom du test
+      statut: PASSED, FAILED ou SKIPPED
+
+  # ---------------------------------------------------------------- MARTS (A)
+  marts.exploitation_sources:
+    description: État de chaque source (dernier chargement, volumes, lignes exclues, fraîcheur).
+    colonnes:
+      source: Source de données
+      dernier_chargement: Dernier chargement réussi
+      dernier_fichier: Dernier fichier connu
+      nb_fichiers: Nombre de fichiers chargés
+      lignes_brutes: Lignes en couche brute
+      lignes_exclues: Lignes écartées du cœur
+      pct_exclues: Part des lignes exclues, en %
+      donnee_la_plus_recente: Date métier la plus récente
+      jours_avant_extraction: Écart en jours avec l'extraction du 30/06/2025
+      nb_echecs_historiques: Nombre de chargements en échec depuis l'origine
+  marts.exploitation_qualite:
+    description: Résultat de chaque règle de qualité à la dernière exécution.
+    colonnes:
+      lignes_table: Nombre de lignes de la table contrôlée
+      pct_lignes: Part des lignes concernées, en %
+      run_at: Horodatage de l'exécution
+  marts.exploitation_tests:
+    description: Résultat des tests bloquants du dernier lancement.
+    colonnes:
+      module: Fichier de test
+      test: Nom du test
+      statut: PASSED, FAILED ou SKIPPED
+  marts.exploitation_runs:
+    description: Historique des lancements du pipeline.
+    colonnes:
+      debut: Début du lancement
+      duree_totale_s: Durée totale en secondes
+      statut: OK ou FAILED
+      etapes: Étapes exécutées dans l'ordre
+      erreur: Message de l'étape en échec
+  marts.exploitation_ingestion:
+    description: Journal d'ingestion hors fichiers ignorés car inchangés.
+    colonnes:
+      source: Table brute alimentée
+      fichier: Fichier traité
+      statut: OK ou FAILED
+      lignes_lues: Lignes lues
+      lignes_chargees: Lignes chargées
+      lignes_rejetees: Lignes rejetées
