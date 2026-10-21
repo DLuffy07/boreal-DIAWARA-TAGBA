@@ -1,7 +1,7 @@
 """Point d'entrée unique du pipeline (Windows, macOS, Linux).
 
     python pipeline.py all                       # chaîne complète, tests bloquants inclus
-    python pipeline.py ingest | prep | dedup | quality | core | test
+    python pipeline.py ingest | prep | dedup | quality | core | test | marts | docs
     python pipeline.py reload --month 2024_03    # rejoue un mois de règlements puis toute la chaîne
 
 Chaque étape est tracée dans meta.pipeline_runs. En cas d'échec : statut FAILED,
@@ -10,7 +10,10 @@ message dans logs/alerts.log, code de sortie 1 (les étapes suivantes ne tournen
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import urllib.request
+import xml.etree.ElementTree as ET
 import subprocess
 import sys
 import time
@@ -87,9 +90,43 @@ def step_core() -> None:
 
 def step_test() -> None:
     env = {**os.environ, "BOREAL_DB": DB}
-    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests"], cwd=ROOT, env=env)
+    LOGS.mkdir(exist_ok=True)
+    xml = LOGS / "tests.xml"
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests", f"--junitxml={xml}"], cwd=ROOT, env=env)
+    store_test_results(xml)
     if r.returncode != 0:
         raise StepFailed("tests bloquants en échec : chargement interrompu")
+
+
+def store_test_results(xml: Path) -> None:
+    """Résultat de chaque test -> meta.test_results (affiché dans la page Exploitation)."""
+    if not xml.exists():
+        return
+    rows = []
+    for case in ET.parse(xml).getroot().iter("testcase"):
+        fail = case.find("failure") if case.find("failure") is not None else case.find("error")
+        statut = "FAILED" if fail is not None else ("SKIPPED" if case.find("skipped") is not None else "PASSED")
+        rows.append([RUN_ID, case.get("classname", ""), case.get("name", ""), statut,
+                     float(case.get("time", 0)), (fail.get("message") or "")[:500] if fail is not None else None,
+                     datetime.now()])
+    con = duckdb.connect(DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS meta.test_results (
+        run_id VARCHAR, module VARCHAR, test VARCHAR, statut VARCHAR, duree_s DOUBLE, message VARCHAR,
+        horodatage TIMESTAMP)""")
+    con.executemany("INSERT INTO meta.test_results VALUES (?,?,?,?,?,?,?)", rows)
+    con.close()
+
+
+def step_marts() -> None:
+    con = duckdb.connect(DB)
+    con.execute("CREATE SCHEMA IF NOT EXISTS marts")
+    con.close()
+    run_sql_dir("marts")
+
+
+def step_docs() -> None:
+    from docs import gen_catalogue
+    gen_catalogue.run(DB)
 
 
 STEPS = {
@@ -99,8 +136,10 @@ STEPS = {
     "quality": step_quality,
     "core": step_core,
     "test": step_test,
+    "marts": step_marts,
+    "docs": step_docs,
 }
-ALL = ["ingest", "prep", "dedup", "quality", "core", "test"]
+ALL = ["ingest", "prep", "dedup", "quality", "core", "test", "marts", "docs"]
 
 
 def log_step(step: str, statut: str, duree: float, message: str | None = None) -> None:
@@ -114,11 +153,21 @@ def log_step(step: str, statut: str, duree: float, message: str | None = None) -
 
 
 def alert(message: str) -> None:
+    """Alerte d'échec : toujours dans logs/alerts.log ; en plus, si la variable
+    BOREAL_ALERT_WEBHOOK est définie (Teams, Slack, Discord...), envoi d'un POST JSON."""
     LOGS.mkdir(exist_ok=True)
     line = f"{datetime.now():%Y-%m-%d %H:%M:%S} run={RUN_ID} ÉCHEC {message}\n"
     with open(LOGS / "alerts.log", "a", encoding="utf-8") as f:
         f.write(line)
     print("!! " + line.strip(), file=sys.stderr)
+    url = os.environ.get("BOREAL_ALERT_WEBHOOK")
+    if url:
+        try:
+            body = json.dumps({"text": f"[Boréal] pipeline en échec : {message}"}).encode()
+            req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=10)
+        except Exception as e:  # noqa: BLE001
+            print(f"!! webhook injoignable : {e}", file=sys.stderr)
 
 
 def run_steps(names: list[str]) -> int:
