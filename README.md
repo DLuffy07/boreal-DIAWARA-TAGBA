@@ -15,7 +15,7 @@ streamlit run dashboard/app.py
 ## Commandes utiles
 
 ```bash
-python pipeline.py all                      # ingest -> prep -> dedup -> quality -> core -> tests
+python pipeline.py all                      # ingest -> prep -> dedup -> quality -> core -> tests -> marts -> analyses -> catalogue
 python pipeline.py reload --month 2024_03   # rejoue un mois de règlements (idempotent)
 python -m pytest -q tests                   # tests seuls
 ```
