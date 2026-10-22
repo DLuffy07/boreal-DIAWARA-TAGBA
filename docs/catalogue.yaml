@@ -1,8 +1,3 @@
-# Catalogue des données : description de chaque table et de chaque colonne.
-# docs/gen_catalogue.py croise ce fichier avec la base et produit docs/catalogue.md.
-# Toute colonne présente en base mais absente d'ici est listée comme « NON DOCUMENTÉE ».
-# Les colonnes communes (même sens partout) sont décrites une seule fois.
-
 communes:
   _source_file: Fichier source d'où provient la ligne (chemin relatif à data/sources)
   _row_number: Numéro de ligne dans le fichier source (en-tête exclu)
@@ -57,9 +52,7 @@ communes:
   volume: Nombre de lignes concernées
   duree_s: Durée en secondes
   message: Message d'erreur ou commentaire
-
 tables:
-  # ---------------------------------------------------------------- RAW
   raw.clients:
     description: Copie fidèle de crm/clients.csv (latin-1, séparateur ;). Toutes les valeurs en texte.
   raw.contrats:
@@ -67,11 +60,10 @@ tables:
   raw.sinistres:
     description: Copie fidèle de sinistres/sinistres.jsonl, une ligne par enregistrement JSON.
   raw.reglements:
-    description: Copie fidèle des 64 fichiers mensuels reglements_AAAA_MM.csv, colonnes alignées par nom (montant_eur -> montant).
+    description: Copie fidèle des 64 fichiers mensuels reglements_AAAA_MM.csv, colonnes alignées par nom (montant_eur
+      -> montant).
   raw.audits:
     description: Copie fidèle de antifraude/audits.csv (dossiers audités uniquement).
-
-  # ---------------------------------------------------------------- PREP
   prep.clients:
     description: Clients typés et normalisés, sans filtrage (autant de lignes qu'en raw).
     colonnes:
@@ -87,9 +79,8 @@ tables:
   prep.audits:
     description: Audits typés, sans filtrage.
   prep.client_mapping:
-    description: Résultat de la déduplication (script quality/dedup_clients.py) — un client source vers son client maître.
-
-  # ---------------------------------------------------------------- QUARANTAINE
+    description: Résultat de la déduplication (script quality/dedup_clients.py) — un client source vers son client
+      maître.
   quarantine.anomalies:
     description: Une ligne par couple (règle, ligne source en anomalie). Rien n'est supprimé.
   quarantine.lignes_exclues:
@@ -104,8 +95,6 @@ tables:
       fichier: Fichier source
       ligne: Numéro de ligne
       contenu: Contenu brut de la ligne rejetée
-
-  # ---------------------------------------------------------------- CŒUR
   core.dim_date:
     description: Calendrier, une ligne par jour de 2019 à 2025.
     colonnes:
@@ -122,7 +111,8 @@ tables:
       is_current: Vrai pour la version en vigueur
       hash_attributs: Empreinte de région + CSP + consentement, sert à détecter un changement
   core.v_client_analyse:
-    description: Vue — profil client observé au 30/06/2025, une ligne par client maître. Seule vue client à joindre dans les marts.
+    description: Vue — profil client observé au 30/06/2025, une ligne par client maître. Seule vue client à joindre
+      dans les marts.
     colonnes:
       client_sk: Clé de la version utilisée
       age: Âge au 30/06/2025
@@ -136,9 +126,11 @@ tables:
   core.fait_exposition:
     description: Grain contrat × année civile. Base de toute fréquence et de toute prime acquise.
     colonnes:
-      exposition_annees: Jours couverts dans l'année / 365,25 (effet inclus, résiliation exclue, fin d'observation 30/06/2025 incluse)
+      exposition_annees: Jours couverts dans l'année / 365,25 (effet inclus, résiliation exclue, fin d'observation
+        30/06/2025 incluse)
       prime_acquise: prime_annuelle × exposition_annees, en euros
-      resilie_dans_annee: Vrai si la date de résiliation tombe dans l'année (indicatif ; compter les résiliations depuis dim_contrat)
+      resilie_dans_annee: Vrai si la date de résiliation tombe dans l'année (indicatif ; compter les résiliations
+        depuis dim_contrat)
   core.fait_sinistre:
     description: Grain sinistre. Charge évaluée au 30/06/2025.
     colonnes:
@@ -148,12 +140,11 @@ tables:
       date_dernier_paiement: Date du dernier règlement (sert de date de clôture approchée)
       reserve_restante: Pour un sinistre OUVERT, max(réserve initiale − payé, 0) ; sinon 0
       charge: montant_paye + reserve_restante
-      retenu: Vrai si statut hors SANS_SUITE et REJETE ; seuls les retenus entrent dans fréquence, coût moyen et S/P
+      retenu: Vrai si statut hors SANS_SUITE et REJETE ; seuls les retenus entrent dans fréquence, coût moyen et
+        S/P
       audite: Vrai si le dossier a été contrôlé par l'antifraude
   core.fait_reglement:
     description: Grain paiement. Règlements valides, doublons de livraison exclus.
-
-  # ---------------------------------------------------------------- MÉTA
   meta.ingestion_log:
     description: Journal d'ingestion, une ligne par fichier et par lancement.
     colonnes:
@@ -181,8 +172,6 @@ tables:
       module: Fichier de test
       test: Nom du test
       statut: PASSED, FAILED ou SKIPPED
-
-  # ---------------------------------------------------------------- MARTS (A)
   marts.exploitation_sources:
     description: État de chaque source (dernier chargement, volumes, lignes exclues, fraîcheur).
     colonnes:
@@ -225,3 +214,271 @@ tables:
       lignes_lues: Lignes lues
       lignes_chargees: Lignes chargées
       lignes_rejetees: Lignes rejetées
+  quarantine.clients_a_revoir:
+    description: Clients laissés séparés par la déduplication, une ligne par client à examiner.
+    colonnes: {}
+  marts.mart_segments:
+    description: Indicateurs techniques au grain année × segment × tranche d’âge.
+    colonnes:
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      exposition_annees: Durée totale observée en années-polices, jours couverts / 365,25.
+      primes_acquises: Somme des primes annuelles proratisées à la durée couverte, en euros.
+      nb_resiliations: Résiliations à leur date réelle, parmi les contrats valides de la période observée.
+      nb_contrats_exposes: Nombre de contrats-années avec exposition positive ; non additif entre années comme nombre
+        unique de contrats.
+      nb_sinistres_retenus: Nombre de sinistres hors SANS_SUITE et REJETE.
+      nb_sans_suite: Nombre de sinistres au statut SANS_SUITE.
+      nb_rejetes: Nombre de sinistres au statut REJETE.
+      montant_paye_retenu: Somme des paiements des sinistres retenus, en euros.
+      reserve_restante_retenue: Somme des réserves restantes conventionnelles des sinistres retenus, en euros.
+      charge_retenue: Somme payé + réserve restante des sinistres retenus, en euros.
+      montant_paye_tous_statuts: Somme des paiements de tous les statuts, en euros.
+      frequence: Sinistres retenus / exposition, en sinistres par année-police ; null si exposition nulle.
+      cout_moyen: Charge retenue / nombre de sinistres retenus, en euros ; null sans sinistre.
+      prime_moyenne: Primes acquises / exposition, en euros par année-police.
+      ratio_sp: Charge retenue / primes acquises ; ratio brut (0,70 = 70 %), null si prime nulle.
+      taux_resiliation: Résiliations / exposition, par année-police ; pas une proportion de clients.
+      annee_partielle: Vrai pour 2025, limitée à janvier-juin.
+  marts.mart_contrats_analyse:
+    description: 'Une ligne par contrat valide : exposition et mesures cumulées observées, profil client de juin
+      2025.'
+    colonnes:
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      exposition_annees: Durée totale observée en années-polices, jours couverts / 365,25.
+      primes_acquises: Somme des primes annuelles proratisées à la durée couverte, en euros.
+      nb_sinistres_retenus: Nombre de sinistres hors SANS_SUITE et REJETE.
+      charge_retenue: Somme payé + réserve restante des sinistres retenus, en euros.
+      nb_resiliations: Résiliations à leur date réelle, parmi les contrats valides de la période observée.
+  marts.mart_sinistres_analyse:
+    description: Une ligne par sinistre valide avec charge et profil du contrat/client ; tous statuts.
+    colonnes:
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      retenu: Vrai si le statut est différent de SANS_SUITE et REJETE.
+      montant_paye: Paiements cumulés du sinistre connus à la date d’extraction, en euros.
+      reserve_restante: Réserve conventionnelle encore ouverte, en euros.
+      charge: Montant payé + réserve restante, en euros.
+  marts.mart_ic:
+    description: 'Une ligne par axe × groupe × indicateur : estimation et intervalle de confiance à 95 %.'
+    colonnes:
+      axe: Dimension de regroupement ; global signifie tout le portefeuille.
+      groupe: Modalité de la dimension de regroupement.
+      indicateur: Nom de la mesure estimée.
+      estimation: Valeur ponctuelle de l’indicateur, dans son unité brute.
+      ic_bas: Borne inférieure de l’intervalle de confiance, même unité que l’estimation.
+      ic_haut: Borne supérieure de l’intervalle de confiance, même unité que l’estimation.
+      niveau_confiance: Niveau nominal de confiance, 0,95 pour 95 %.
+      methode: Méthode statistique ou de décomposition employée.
+      nb_clients_blocs: Nombre de clients uniques, unités de rééchantillonnage du bootstrap.
+      repetitions: Nombre de réplications du bootstrap ; zéro pour un intervalle analytique.
+      graine: Graine du générateur pseudo-aléatoire, pour reproductibilité.
+  marts.mart_tests_statistiques:
+    description: Deux comparaisons prévues ; p-values brutes et correction de Holm.
+    colonnes:
+      comparaison: Population et groupes de la comparaison prévue.
+      test: Nom du test statistique utilisé.
+      statistique: Rapport de taux pour Poisson ; statistique U pour Mann-Whitney.
+      p_value: P-value bilatérale brute ; ne mesure ni la taille de l’effet ni sa causalité.
+      n_groupe_1: Nombre de sinistres du premier groupe.
+      n_groupe_2: Nombre de sinistres du deuxième groupe.
+      mesure_1: Fréquence zone 1 pour Poisson ; médiane de charge AGENT pour Mann-Whitney.
+      mesure_2: Fréquence zone 5 pour Poisson ; médiane de charge WEB pour Mann-Whitney.
+      interpretation: Périmètre, mesure et limites du test.
+      p_value_holm: P-value ajustée de Holm sur les deux comparaisons prévues.
+  marts.mart_queue_couts:
+    description: Synthèse de la queue de charge des sinistres retenus et sensibilité au maximum.
+    colonnes:
+      nb_sinistres: Nombre de sinistres retenus dans la distribution analysée.
+      mediane: Quantile 50 % de la charge par sinistre retenu, en euros.
+      p90: Quantile 90 % de la charge par sinistre retenu, en euros.
+      p95: Quantile 95 % de la charge par sinistre retenu, en euros.
+      p99: Quantile 99 % de la charge par sinistre retenu, en euros.
+      maximum: Charge maximale d’un sinistre retenu, en euros.
+      nb_top_1pct: Nombre de dossiers composant le premier centile le plus coûteux, arrondi supérieur.
+      part_charge_top_1pct: Part de la charge portée par ces dossiers ; ratio brut.
+      charge_totale: Charge totale des sinistres retenus, en euros.
+      cout_moyen: Charge retenue / nombre de sinistres retenus, en euros ; null sans sinistre.
+      cout_moyen_sans_max: Coût moyen après retrait du seul dossier maximum, sensibilité non officielle.
+      ratio_sp: Charge retenue / primes acquises ; ratio brut (0,70 = 70 %), null si prime nulle.
+      ratio_sp_sans_max: S/P après retrait du dossier maximum de la charge, primes inchangées ; sensibilité.
+  marts.mart_decomposition_sp:
+    description: Variation annuelle globale du S/P expliquée par trois effets Shapley ; 2025 partielle.
+    colonnes:
+      annee_precedente: Année civile servant de référence de comparaison.
+      sp_precedent: S/P technique de l’année précédente, ratio brut.
+      sp_courant: S/P technique de l’année courante, ratio brut.
+      variation_sp: S/P courant moins S/P précédent, ratio brut ; multiplier par 100 pour des points de pourcentage.
+      effet_frequence: Contribution Shapley de la fréquence à la variation du S/P, ratio brut.
+      effet_cout_moyen: Contribution Shapley du coût moyen à la variation du S/P, ratio brut.
+      effet_prime_moyenne: Contribution Shapley de la prime moyenne à la variation du S/P, ratio brut.
+      effet_volume_sur_ratio: Zéro par identité algébrique ; l’exposition se simplifie dans le ratio.
+      exposition_precedente: Exposition de l’année précédente, en années-polices.
+      exposition_courante: Exposition de l’année courante, en années-polices.
+      charge_precedente: Charge retenue de l’année précédente, en euros.
+      charge_courante: Charge retenue de l’année courante, en euros.
+      primes_precedentes: Primes acquises de l’année précédente, en euros.
+      primes_courantes: Primes acquises de l’année courante, en euros.
+      annee_partielle: Vrai pour 2025, limitée à janvier-juin.
+      methode: Méthode statistique ou de décomposition employée.
+  marts.mart_contributions_segments:
+    description: Contribution comptable de chaque segment à la variation annuelle du S/P global.
+    colonnes:
+      contribution_sp: Charge du segment / primes globales de l’année, ratio brut.
+      precedent: Contribution du même segment à l’année précédente, ratio brut.
+      variation_contribution_sp: Variation de la contribution comptable du segment au S/P ; ratio brut.
+      annee_partielle: Vrai pour 2025, limitée à janvier-juin.
+  marts.mart_valeur_client:
+    description: 'Une ligne par client maître : primes acquises moins sinistres payés sur la période observée, hors
+      frais et réserves.'
+    colonnes:
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      primes_acquises: Somme des primes annuelles proratisées à la durée couverte, en euros.
+      sinistres_payes: Paiements cumulés sur les sinistres valides du client, tous statuts, euros.
+      valeur_observee: Primes acquises cumulées moins sinistres payés cumulés ; euros, sans frais ni réserves.
+      nb_sinistres_tous_statuts: Nombre de sinistres valides du client, tous statuts confondus.
+      nb_contrats: Nombre de contrats valides du client sur l’ensemble de la période.
+      nb_contrats_actifs: Nombre de contrats du client actifs au 30/06/2025, résiliation exclue.
+      auto_actif: Au moins un contrat AUTO actif au 30/06/2025.
+      habitation_active: Au moins un contrat HABITATION actif au 30/06/2025.
+      multi_detenteur_actuel: Au moins un contrat de chaque produit actif au 30/06/2025.
+  marts.mart_retention_individuelle:
+    description: 'Une ligne par client, produit et ancienneté : présence au même produit à l’anniversaire ; observabilité
+      de la cohorte entière.'
+    colonnes:
+      date_entree: Date de première souscription valide du client au produit.
+      cohorte: Année de première souscription valide du client au produit.
+      detention_entree: Mono/Multi mesuré à la première souscription au produit ; Tous agrège les groupes.
+      anciennete: Nombre entier d’années écoulées depuis la première souscription au produit.
+      date_anniversaire: Date d’entrée décalée du nombre d’années d’ancienneté.
+      observable: Tous les anniversaires de la cohorte-produit-ancienneté sont au plus tard le 30/06/2025.
+      retenu_anniversaire: Au moins un contrat du même produit actif à l’anniversaire ; null si cohorte non entièrement
+        observable.
+  marts.mart_retention:
+    description: Proportion de clients retenus par cohorte, produit, ancienneté et groupe fixé à l’entrée ; IC Wilson
+      ajoutés par le script 05.
+    colonnes:
+      cohorte: Année de première souscription valide du client au produit.
+      anciennete: Nombre entier d’années écoulées depuis la première souscription au produit.
+      detention_entree: Mono/Multi mesuré à la première souscription au produit ; Tous agrège les groupes.
+      observable: Tous les anniversaires de la cohorte-produit-ancienneté sont au plus tard le 30/06/2025.
+      nb_clients_cohorte: Nombre de clients distincts de la cohorte, du produit et du groupe fixé à l’entrée.
+      nb_retenus: Clients présents au même produit à l’anniversaire ; null si période inobservable.
+      taux_retention: Clients retenus / clients de cohorte ; proportion brute, null pour une case non observable.
+      ic_bas: Borne inférieure de l’intervalle de confiance, même unité que l’estimation.
+      ic_haut: Borne supérieure de l’intervalle de confiance, même unité que l’estimation.
+  marts.mart_pareto_valeur:
+    description: Classement et concentration des seules valeurs client strictement positives ; pertes exclues et
+      analysées séparément.
+    colonnes:
+      valeur_observee: Primes acquises cumulées moins sinistres payés cumulés ; euros, sans frais ni réserves.
+      rang: Rang décroissant de valeur parmi les clients à valeur positive, départagé par identifiant.
+      part_clients_positifs: Rang / nombre de clients à valeur strictement positive.
+      part_valeur_positive_cumulee: Somme des valeurs positives jusqu’au rang / total des valeurs positives.
+  marts.mart_delais:
+    description: 'Une ligne par sinistre : délais observés, statut et audit ; dernier paiement des clôturés comme
+      approximation explicitement distincte.'
+    colonnes:
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      date_premier_paiement: Date minimale des paiements du sinistre ; null sans paiement.
+      date_dernier_paiement: Date maximale des paiements enregistrés ; ce n’est pas une date de clôture.
+      montant_paye: Paiements cumulés du sinistre connus à la date d’extraction, en euros.
+      charge: Montant payé + réserve restante, en euros.
+      audite: Dossier ayant un audit valide dans le cœur.
+      delai_declaration_jours: Déclaration moins survenance en jours.
+      delai_premier_reglement_jours: Premier paiement moins déclaration en jours ; null si absent ou négatif.
+      delai_dernier_reglement_clotures_jours: Dernier paiement moins déclaration, uniquement pour les dossiers CLOTURE
+        ; approximation distincte du délai réel de clôture.
+      paiement_avant_declaration: Premier paiement antérieur à la déclaration ; anomalie signalée.
+      tranche_charge: 'Charge observée à l’extraction : <1000, 1000-4999, 5000-19999 ou >=20000 euros.'
+      tranche_delai_declaration: Déclaration dans les 0-7 jours, 8-30 jours ou au-delà de 30 jours.
+  marts.mart_delais_garantie:
+    description: Quantiles des délais disponibles et effectifs par garantie.
+    colonnes:
+      nb_dossiers: Nombre de sinistres valides de la garantie.
+      nb_ouverts: Nombre de sinistres encore au statut OUVERT.
+      nb_delais_declaration: Nombre de délais de déclaration renseignés.
+      nb_delais_premier_reglement: Nombre de premiers paiements observés et non antérieurs à la déclaration.
+      nb_delais_dernier_reglement_clotures: Nombre de dossiers CLOTURE avec dernier paiement observé après déclaration.
+      nb_paiements_avant_declaration: Nombre de sinistres dont le premier paiement précède la déclaration.
+      declaration_mediane: 'Médiane du délai : Déclaration moins survenance, jours ; calcul sur les valeurs observées
+        non nulles.'
+      declaration_p75: 'Quantile 75 % du délai : Déclaration moins survenance, jours ; calcul sur les valeurs observées
+        non nulles.'
+      declaration_p90: 'Quantile 90 % du délai : Déclaration moins survenance, jours ; calcul sur les valeurs observées
+        non nulles.'
+      premier_reglement_mediane: 'Médiane du délai : Premier paiement moins déclaration, jours ; calcul sur les
+        valeurs observées non nulles.'
+      premier_reglement_p75: 'Quantile 75 % du délai : Premier paiement moins déclaration, jours ; calcul sur les
+        valeurs observées non nulles.'
+      premier_reglement_p90: 'Quantile 90 % du délai : Premier paiement moins déclaration, jours ; calcul sur les
+        valeurs observées non nulles.'
+      dernier_reglement_clotures_mediane: 'Médiane du délai : Dernier paiement moins déclaration des seuls dossiers
+        CLOTURE (approximation), jours ; calcul sur les valeurs observées non nulles.'
+      dernier_reglement_clotures_p75: 'Quantile 75 % du délai : Dernier paiement moins déclaration des seuls dossiers
+        CLOTURE (approximation), jours ; calcul sur les valeurs observées non nulles.'
+      dernier_reglement_clotures_p90: 'Quantile 90 % du délai : Dernier paiement moins déclaration des seuls dossiers
+        CLOTURE (approximation), jours ; calcul sur les valeurs observées non nulles.'
+  marts.mart_audits:
+    description: Taux de confirmation et montants des seuls dossiers audités valides, par garantie, tranche de charge
+      et délai ; IC Wilson ajoutés par le script 05.
+    colonnes:
+      axe: Dimension de regroupement ; global signifie tout le portefeuille.
+      groupe: Modalité de la dimension de regroupement.
+      nb_audits: Nombre de dossiers audités valides dans le groupe.
+      nb_fraudes_confirmees: Nombre de confirmations de fraude parmi les dossiers audités du groupe.
+      taux_confirmation: Fraudes confirmées / audits valides du groupe ; ne s’applique pas aux non-audités.
+      charge_auditee: Somme des charges observées des dossiers audités, euros.
+      charge_dossiers_confirmes: Charge des dossiers audités à fraude confirmée, euros ; pas une économie prouvée.
+      paye_dossiers_confirmes: Paiements des dossiers audités à fraude confirmée, euros ; pas un montant récupéré.
+      ic_bas: Borne inférieure de l’intervalle de confiance, même unité que l’estimation.
+      ic_haut: Borne supérieure de l’intervalle de confiance, même unité que l’estimation.
+  marts.mart_contrat_mois:
+    description: Une ligne par contrat valide et mois avec couverture, sinistre, paiement ou résiliation ; détail
+      filtrable commun au dashboard.
+    colonnes:
+      mois: Premier jour du mois civil observé ; observation bornée à janvier 2020-juin 2025 dans les marts dashboard.
+      exposition_annees: Durée totale observée en années-polices, jours couverts / 365,25.
+      primes_acquises: Somme des primes annuelles proratisées à la durée couverte, en euros.
+      contrats_actifs: 'Stock de contrats actifs au dernier jour du mois : date d’effet incluse et résiliation exclue
+        ; ne pas sommer entre mois.'
+      nb_resiliations: Résiliations à leur date réelle, parmi les contrats valides de la période observée.
+      nb_sinistres_retenus: Nombre de sinistres hors SANS_SUITE et REJETE.
+      nb_sans_suite: Nombre de sinistres au statut SANS_SUITE.
+      nb_rejetes: Nombre de sinistres au statut REJETE.
+      charge_retenue: Somme payé + réserve restante des sinistres retenus, en euros.
+      montant_paye_retenu: Somme des paiements des sinistres retenus, en euros.
+      reserve_restante_retenue: Somme des réserves restantes conventionnelles des sinistres retenus, en euros.
+      paiements_flux: Paiements effectivement datés du mois, tous statuts ; distincts des paiements des sinistres
+        survenus dans le mois.
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+  marts.mart_portefeuille_mensuel:
+    description: Mois × produit × région × canal × zone × formule × âge ; totaux mensuels et stock de contrats actifs
+      en fin de mois.
+    colonnes:
+      mois: Premier jour du mois civil observé ; observation bornée à janvier 2020-juin 2025 dans les marts dashboard.
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
+      exposition_annees: Durée totale observée en années-polices, jours couverts / 365,25.
+      primes_acquises: Somme des primes annuelles proratisées à la durée couverte, en euros.
+      contrats_actifs: 'Stock de contrats actifs au dernier jour du mois : date d’effet incluse et résiliation exclue
+        ; ne pas sommer entre mois.'
+      nb_resiliations: Résiliations à leur date réelle, parmi les contrats valides de la période observée.
+      nb_sinistres_retenus: Nombre de sinistres hors SANS_SUITE et REJETE.
+      nb_sans_suite: Nombre de sinistres au statut SANS_SUITE.
+      nb_rejetes: Nombre de sinistres au statut REJETE.
+      charge_retenue: Somme payé + réserve restante des sinistres retenus, en euros.
+      montant_paye_retenu: Somme des paiements des sinistres retenus, en euros.
+      reserve_restante_retenue: Somme des réserves restantes conventionnelles des sinistres retenus, en euros.
+      paiements_flux: Paiements effectivement datés du mois, tous statuts ; distincts des paiements des sinistres
+        survenus dans le mois.
+  marts.mart_cohortes_dashboard:
+    description: Détail de rétention enrichi du profil régional de juin 2025 et du canal de première souscription
+      au produit, pour filtres dashboard.
+    colonnes:
+      date_entree: Date de première souscription valide du client au produit.
+      cohorte: Année de première souscription valide du client au produit.
+      detention_entree: Mono/Multi mesuré à la première souscription au produit ; Tous agrège les groupes.
+      anciennete: Nombre entier d’années écoulées depuis la première souscription au produit.
+      date_anniversaire: Date d’entrée décalée du nombre d’années d’ancienneté.
+      observable: Tous les anniversaires de la cohorte-produit-ancienneté sont au plus tard le 30/06/2025.
+      retenu_anniversaire: Au moins un contrat du même produit actif à l’anniversaire ; null si cohorte non entièrement
+        observable.
+      tranche_age: Tranche d’âge au 30/06/2025 ; inconnu si date absente ou âge invalide.
