@@ -1,7 +1,7 @@
 """Point d'entrée unique du pipeline (Windows, macOS, Linux).
 
     python pipeline.py all                       # chaîne complète, tests bloquants inclus
-    python pipeline.py ingest | prep | dedup | quality | core | test | marts | docs
+    python pipeline.py ingest | prep | dedup | quality | core | test | marts | analyses | docs
     python pipeline.py reload --month 2024_03    # rejoue un mois de règlements puis toute la chaîne
 
 Chaque étape est tracée dans meta.pipeline_runs. En cas d'échec : statut FAILED,
@@ -124,6 +124,14 @@ def step_marts() -> None:
     run_sql_dir("marts")
 
 
+def step_analyses() -> None:
+    """Analyses de B (L3/L4) : IC, tests, décomposition, cohortes, marts du dashboard.
+    Même calcul que python analyses/preparer_dashboard.py, intégré pour n'avoir qu'une commande."""
+    r = subprocess.run([sys.executable, str(ROOT / "analyses" / "preparer_dashboard.py"), "--database", DB], cwd=ROOT)
+    if r.returncode != 0:
+        raise StepFailed("analyses B en échec : marts du dashboard non publiés")
+
+
 def step_docs() -> None:
     from docs import gen_catalogue
     gen_catalogue.run(DB)
@@ -137,9 +145,10 @@ STEPS = {
     "core": step_core,
     "test": step_test,
     "marts": step_marts,
+    "analyses": step_analyses,
     "docs": step_docs,
 }
-ALL = ["ingest", "prep", "dedup", "quality", "core", "test", "marts", "docs"]
+ALL = ["ingest", "prep", "dedup", "quality", "core", "test", "marts", "analyses", "docs"]
 
 
 def log_step(step: str, statut: str, duree: float, message: str | None = None) -> None:

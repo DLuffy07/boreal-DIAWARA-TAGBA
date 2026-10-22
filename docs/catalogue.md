@@ -391,7 +391,7 @@ Vue — profil client observé au 30/06/2025, une ligne par client maître. Seul
 
 ## Marts (`marts`)
 
-### `marts.exploitation_ingestion` · 68 lignes
+### `marts.exploitation_ingestion` · 69 lignes
 
 Journal d'ingestion hors fichiers ignorés car inchangés.
 
@@ -425,7 +425,7 @@ Résultat de chaque règle de qualité à la dernière exécution.
 | `pct_lignes` | DOUBLE | Part des lignes concernées, en % |
 | `run_at` | TIMESTAMP | Horodatage de l'exécution |
 
-### `marts.exploitation_runs` · 2 lignes
+### `marts.exploitation_runs` · 6 lignes
 
 Historique des lancements du pipeline.
 
@@ -455,7 +455,7 @@ Historique des lancements du pipeline.
 | `jours_avant_extraction` | BIGINT | Écart en jours avec l'extraction du 30/06/2025 |
 | `nb_echecs_historiques` | BIGINT | Nombre de chargements en échec depuis l'origine |
 
-### `marts.exploitation_tests` · 42 lignes
+### `marts.exploitation_tests` · 61 lignes
 
 Résultat des tests bloquants du dernier lancement.
 
@@ -846,7 +846,7 @@ Une ligne par client maître : primes acquises moins sinistres payés sur la pé
 
 ## Métadonnées d'exploitation (`meta`)
 
-### `meta.ingestion_log` · 136 lignes
+### `meta.ingestion_log` · 477 lignes
 
 Journal d'ingestion, une ligne par fichier et par lancement.
 
@@ -864,7 +864,7 @@ Journal d'ingestion, une ligne par fichier et par lancement.
 | `message` | VARCHAR | Message d'erreur ou commentaire |
 | `horodatage` | TIMESTAMP | Date et heure de l'événement |
 
-### `meta.pipeline_runs` · 18 lignes
+### `meta.pipeline_runs` · 41 lignes
 
 Journal des étapes du pipeline, une ligne par étape et par lancement.
 
@@ -877,7 +877,7 @@ Journal des étapes du pipeline, une ligne par étape et par lancement.
 | `message` | VARCHAR | Message d'erreur ou commentaire |
 | `horodatage` | TIMESTAMP | Date et heure de l'événement |
 
-### `meta.qualite_resultats` · 58 lignes
+### `meta.qualite_resultats` · 174 lignes
 
 Historique du volume de chaque règle de qualité à chaque exécution.
 
@@ -895,7 +895,7 @@ Historique du volume de chaque règle de qualité à chaque exécution.
 | `lignes_table` | INTEGER | Nombre de lignes de la table contrôlée |
 | `taux` | DOUBLE | volume / lignes_table |
 
-### `meta.test_results` · 124 lignes
+### `meta.test_results` · 131 lignes
 
 Résultat de chaque test bloquant à chaque lancement.
 
